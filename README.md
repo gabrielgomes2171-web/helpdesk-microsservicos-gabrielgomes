@@ -1,155 +1,109 @@
-# HelpDesk TI · versão monolítica
+# HelpDesk TI em microsserviços
 
-Sistema de chamados de TI (no estilo de um GLPI simplificado), feito em **Python + FastAPI**.
-É a aplicação base da atividade de **Arquitetura de Software**: hoje ela é um **monólito**;
-a missão de cada aluno é transformá-la em **microsserviços** (veja [DESAFIO.md](DESAFIO.md)).
+🎥 **Vídeo de demonstração:** 
 
-## Telas do sistema
+Trabalho da disciplina de Arquitetura de Software (Prof. Filipe Cavalcante): transformação do
+monólito HelpDesk TI em microsserviços, mantendo as mesmas funcionalidades e a mesma segurança.
 
-![Demonstração: entrar, abrir, atribuir, resolver e fechar um chamado](docs/demo.gif)
+## Arquitetura
 
-| Login | Painel do técnico | Chamado resolvido |
+```mermaid
+flowchart LR
+    U([Navegador]) -->|"localhost:8000"| G
+
+    subgraph Docker["Rede interna do Docker"]
+        G["API Gateway<br/>tela + roteamento<br/>(única porta exposta)"]
+        US["Usuários<br/>login e emissão de token"]
+        IN["Inventário<br/>equipamentos"]
+        CH["Chamados<br/>chamados, SLA, comentários,<br/>painel e notificações"]
+
+        DB1[("usuarios.db")]
+        DB2[("inventario.db")]
+        DB3[("chamados.db")]
+
+        G -->|"/auth, /usuarios"| US
+        G -->|"/ativos"| IN
+        G -->|"/chamados, /notificacoes"| CH
+        CH -.->|"GET /usuarios/{id}<br/>token repassado, timeout 3s"| US
+        CH -.->|"GET /ativos/{id}<br/>token repassado, timeout 3s"| IN
+
+        US --- DB1
+        IN --- DB2
+        CH --- DB3
+    end
+```
+
+| Serviço | Rotas | Banco |
 |---|---|---|
-| ![Login](docs/01-login.png) | ![Painel](docs/02-painel.png) | ![Chamado resolvido](docs/03-chamado-resolvido.png) |
-
-## O que o sistema faz
-
-- **Login** com e-mail e senha; cada pessoa vê e faz só o que o seu perfil permite.
-- Cadastra **usuários** e **equipamentos** (inventário de TI).
-- **Abre chamados** com prioridade e calcula o prazo de atendimento (SLA): crítica 4 h, alta 8 h, média 24 h, baixa 72 h.
-- **Atribui** chamados a técnicos, controla o **status** e aceita **comentários**.
-- Registra **notificações** quando um chamado é aberto, atribuído ou resolvido.
-- Mostra um **painel** com totais por status e chamados atrasados.
-
-### Perfis e permissões
-
-| Ação | Solicitante | Técnico | Administrador |
-|---|:-:|:-:|:-:|
-| Abrir chamado | ✅ | ✅ | ✅ |
-| Ver chamados | só os seus | todos | todos |
-| Comentar | nos seus | todos | todos |
-| Atribuir e resolver | ❌ | ✅ | ✅ |
-| Fechar ou reabrir um chamado resolvido | os seus | ✅ | ✅ |
-| Cadastrar equipamentos | ❌ | ✅ | ✅ |
-| Cadastrar usuários | ❌ | ❌ | ✅ |
+| **gateway** | `/` (tela), `/saude` e repasse de todas as rotas abaixo | nenhum |
+| **usuarios** | `/auth/login`, `/auth/eu`, `/usuarios` | `usuarios.db` |
+| **inventario** | `/ativos` | `inventario.db` |
+| **chamados** | `/chamados`, `/notificacoes` | `chamados.db` |
 
 ## Como rodar
 
-**Com Docker**
+Requisito: Docker com Docker Compose.
 
 ```bash
+cp .env.example .env
+# gere um segredo e coloque em JWT_SEGREDO no .env:
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+
 docker compose up --build
 ```
 
-**Sem Docker** (Python 3.11 ou mais novo)
+Acesse **http://localhost:8000**.
 
-```bash
-pip install -r requirements-dev.txt
-uvicorn app.main:app --reload
-```
+Contas de exemplo (senha `Helpdesk2026`): `admin@empresa.com` (admin), `carla@empresa.com` e
+`diego@empresa.com` (técnicos), `ana@empresa.com` e `bruno@empresa.com` (solicitantes).
 
-Depois abra:
-
-- Tela do HelpDesk: http://localhost:8000
-- Documentação da API (Swagger): http://localhost:8000/docs (clique em **Authorize** e cole o token do login)
-
-### Contas de acesso
-
-Não é preciso criar conta: o sistema já começa com estes usuários.
-Todos usam a senha **`Helpdesk2026`**.
-
-| E-mail | Perfil | O que pode fazer |
-|---|---|---|
-| `admin@empresa.com` | Administrador | Tudo, inclusive cadastrar usuários |
-| `carla@empresa.com` | Técnica | Ver todos os chamados, atribuir, resolver e cadastrar equipamentos |
-| `diego@empresa.com` | Técnico | O mesmo que a Carla |
-| `ana@empresa.com` | Solicitante | Abrir chamados e ver só os próprios |
-| `bruno@empresa.com` | Solicitante | O mesmo que a Ana |
-
-Dicas:
-
-- Para testar o fluxo completo (abrir, atribuir, resolver e fechar), entre como **Carla**.
-- Para testar as permissões, entre como **Ana**: ela não vê os chamados do Bruno.
-- Para trocar a senha de todas as contas, defina `SENHA_EXEMPLO` no arquivo `.env`.
-- As contas só são criadas quando o sistema sobe com `DADOS_EXEMPLO=1` (o padrão), e só na primeira vez, com o banco vazio.
-
-> Estas contas têm senha conhecida e servem só para aula. Em produção, use `DADOS_EXEMPLO=0`.
-
-### Configuração
-
-Copie `.env.example` para `.env` e ajuste. O principal é o `JWT_SEGREDO`, que assina os logins.
-O arquivo `.env` nunca deve ir para o GitHub (ele já está no `.gitignore`).
+Para ver quais serviços estão no ar: `curl localhost:8000/saude`.
 
 ## Testes
 
+Cada serviço tem os próprios testes, que também rodam no GitHub Actions (um job por serviço):
+
 ```bash
-pytest -q
+cd servicos/usuarios   && pytest -q
+cd servicos/inventario && pytest -q
+cd servicos/chamados   && pytest -q
 ```
 
-São 36 testes, incluindo **testes de segurança** (`tests/test_seguranca.py`): login, token falso ou vencido,
-bloqueio de tentativas, permissões por perfil, campos extras e limites de tamanho.
-A cada envio ao GitHub, os testes rodam sozinhos e o `pip-audit` confere se alguma dependência tem falha conhecida.
+## Decisões
 
-## Segurança
+1. **Divisão dos serviços.** Segui os módulos que já existiam no monólito. O login ficou no
+   serviço de Usuários, porque depende da tabela de usuários.
+2. **Um banco por serviço.** Cada serviço tem o próprio SQLite em um volume separado. As chaves
+   estrangeiras entre serviços (`solicitante_id`, `tecnico_id`, `ativo_id`, `autor_id`) viraram
+   apenas números. A FK entre `comentarios` e `chamados` continua, porque as duas tabelas estão no
+   mesmo serviço.
+3. **Autenticação pelo token.** Só o serviço de Usuários emite tokens. Os outros apenas conferem
+   a assinatura com o mesmo `JWT_SEGREDO` e leem o `id` e o `perfil` do próprio token, sem
+   consultar o banco de outro serviço. Por isso, o `JWT_SEGREDO` passou a ser **obrigatório**: no
+   monólito, sem ele era gerado um segredo aleatório, o que faria cada serviço usar um segredo
+   diferente.
+4. **Comunicação e falhas.** Chamados consulta Usuários e Inventário por HTTP (`app/clientes.py`),
+   repassando o token do usuário no cabeçalho `Authorization`, com tempo limite de 3 segundos. Se
+   o outro serviço estiver fora do ar, a resposta é **503** com uma mensagem clara. A listagem e o
+   painel usam só o banco de Chamados e continuam funcionando.
+5. **Gateway.** É um pequeno FastAPI com `httpx`, que serve a tela e repassa cada rota pelo
+   primeiro trecho do caminho. Só ele publica porta, e apenas em `127.0.0.1`.
+6. **Notificações.** Continuam dentro do serviço de Chamados, como no monólito.
+7. **Dados de exemplo.** Cada serviço cria só os seus. Os ids precisam bater entre eles
+   (ana = 2, carla = 4, PAT-0001 = 1).
+8. **Segurança do contêiner.** Foram mantidas as proteções do monólito em todos os serviços:
+   usuário não-root, `read_only`, `cap_drop: ALL` e `no-new-privileges`.
 
-Veja o que está protegido e o que fazer antes de usar em produção em [SECURITY.md](SECURITY.md).
+## O que mudou em relação ao monólito
 
-## Arquitetura atual (monólito)
+**O que melhorou:** cada serviço pode ser construído, publicado e reiniciado sozinho. Uma falha
+no Inventário não derruba os chamados. Cada time cuida do seu código e do seu banco.
 
-Uma aplicação, um banco e uma implantação. O código é dividido em **módulos**, e cada módulo
-só usa a **porta pública** do outro (o arquivo `servico.py`).
-
-```mermaid
-flowchart TB
-    Tela[Tela do HelpDesk] --> API
-    subgraph API[Aplicação HelpDesk · um processo]
-        Auth[auth]
-        Usuarios[usuarios]
-        Inventario[inventario]
-        Chamados[chamados]
-        Notificacoes[notificacoes]
-        Auth -->|confere a senha| Usuarios
-        Chamados -->|chamada de função| Usuarios
-        Chamados -->|chamada de função| Inventario
-        Chamados -->|chamada de função| Notificacoes
-    end
-    API --> BD[(Banco único)]
-```
-
-```
-app/
-├── main.py            # junta os módulos e sobe a aplicação
-├── config.py          # configurações (variáveis de ambiente)
-├── database.py        # conexão com o banco único
-├── seguranca_http.py  # cabeçalhos de segurança e limite de tamanho
-├── erros.py           # erros de negócio
-├── dados_exemplo.py   # dados iniciais (só para aula)
-├── web/               # tela: index.html, app.js, estilo.css
-├── auth/              # senhas (scrypt), tokens JWT, login, limite de tentativas
-├── usuarios/          # modelos, esquemas, repositorio, servico (público), rotas
-├── inventario/
-├── chamados/          # depende de usuarios, inventario e notificacoes
-└── notificacoes/
-```
-
-Em `app/chamados/servico.py`, os comentários `# vira chamada HTTP` e `# vira evento` marcam
-os pontos que mudam quando o sistema for separado.
-
-## Rotas principais
-
-Todas exigem login, exceto `/auth/login` e `/saude`.
-
-| Método | Rota | O que faz | Quem pode |
-|---|---|---|---|
-| POST | `/auth/login` | Entra e recebe o token | Todos |
-| GET | `/auth/eu` | Dados de quem está logado | Logado |
-| POST | `/usuarios` | Cria usuário | Admin |
-| GET | `/usuarios` | Lista usuários (sem e-mail) | Logado |
-| POST / GET | `/ativos` | Cria e lista equipamentos | Técnico e admin / logado |
-| POST | `/chamados` | Abre chamado em nome de quem está logado | Logado |
-| GET | `/chamados` | Lista chamados | Logado (solicitante vê só os seus) |
-| GET | `/chamados/painel` | Totais por status e atrasados | Logado |
-| PATCH | `/chamados/{id}/atribuir` | Atribui a um técnico | Técnico e admin |
-| PATCH | `/chamados/{id}/status` | Muda o status | Técnico e admin (solicitante: fechar ou reabrir) |
-| POST | `/chamados/{id}/comentarios` | Comenta no chamado | Envolvidos |
-| GET | `/notificacoes` | Minhas notificações | Logado |
+**O que ficou mais difícil:**
+- agora existe a rede no meio, com latência, timeouts e falhas parciais para tratar;
+- não há mais JOIN nem chave estrangeira entre serviços: se um equipamento for apagado, um
+  chamado pode continuar apontando para ele;
+- um usuário desativado continua com acesso até o token expirar (60 minutos), porque os serviços
+  não consultam mais o banco de usuários a cada requisição;
+- testar ficou mais trabalhoso: em Chamados, os outros serviços são simulados nos testes;
+- há mais contêineres para subir, monitorar e manter.
