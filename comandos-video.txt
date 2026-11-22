@@ -1,0 +1,23 @@
+docker compose up --build -d
+docker compose ps
+
+# Segurança
+curl -i localhost:8000/chamados
+
+TOKEN_ANA=$(curl -s -X POST localhost:8000/auth/login -H "Content-Type: application/json" -d '{"email":"ana@empresa.com","senha":"Helpdesk2026"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+curl -s localhost:8000/chamados/2 -H "Authorization: Bearer $TOKEN_ANA"; echo
+
+# Bancos separados
+docker volume ls
+docker compose exec usuarios ls -l /dados
+docker compose exec inventario ls -l /dados
+docker compose exec chamados ls -l /dados
+
+# Falha
+docker compose stop inventario
+curl -s localhost:8000/saude; echo
+docker compose start inventario
+
+# Bônus
+curl -s localhost:8000/saude; echo
+cd servicos/chamados && pytest -q && cd ../..
