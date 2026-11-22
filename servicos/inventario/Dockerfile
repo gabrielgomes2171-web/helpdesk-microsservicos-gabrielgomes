@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 
 USER helpdesk
-ENV DATABASE_URL=sqlite:////dados/helpdesk.db \
+ENV DATABASE_URL=sqlite:////dados/inventario.db \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 EXPOSE 8000

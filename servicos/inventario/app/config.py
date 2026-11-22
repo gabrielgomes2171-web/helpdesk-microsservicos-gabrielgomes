@@ -9,10 +9,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./helpdesk.db")
 
 # Segredo usado para assinar os tokens JWT. Em produção, defina JWT_SEGREDO.
 # Sem ele, um segredo aleatório é gerado a cada início (os logins expiram ao reiniciar).
-JWT_SEGREDO = os.getenv("JWT_SEGREDO") or ""
+JWT_SEGREDO = os.getenv("JWT_SEGREDO", "")
 if len(JWT_SEGREDO) < 32:
-    if JWT_SEGREDO:
-        log.warning("JWT_SEGREDO tem menos de 32 caracteres; usando um segredo aleatório.")
+    raise RuntimeError("Defina JWT_SEGREDO no .env (mínimo de 32 caracteres).")
     JWT_SEGREDO = secrets.token_urlsafe(48)
 
 JWT_ALGORITMO = "HS256"
